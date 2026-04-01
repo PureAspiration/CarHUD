@@ -1,0 +1,7 @@
+numpy==2.3.3
+obd==0.7.3
+psutil==7.0.0
+pynmea2==1.19.0
+pyserial==3.5
+pytz==2025.2
+shapely==2.1.1

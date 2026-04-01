@@ -1,0 +1,14 @@
+/.idea/
+/__pycache__/
+/venv/
+/tests/
+
+# Runtime files
+/nz_speed_cameras_geojson.json
+/grid/
+
+# Massive databases
+/speed cameras/speed_cameras_all_formatted.json
+/speed cameras/speed_cameras_all_raw.json
+/speed zones/raw_nslr.json
+/speed zones/compressed_nslr.json
