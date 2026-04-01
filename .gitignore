@@ -1,11 +1,11 @@
 /.idea/
 /__pycache__/
 /venv/
-/tests/
+/data_processor/src/tests/
 
 # Runtime files
-/nz_speed_cameras_geojson.json
-/grid/
+/data_processor/src/nz_speed_cameras_geojson.json
+/data_processor/src/grid/
 
 # Massive databases
 /speed cameras/speed_cameras_all_formatted.json
