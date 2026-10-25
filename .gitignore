@@ -3,6 +3,8 @@
 /venv/
 /data_processor/src/tests/
 
+/data_processor/instructions.txt
+
 # Runtime files
 /data_processor/src/nz_speed_cameras_geojson.json
 /data_processor/src/grid/
@@ -10,5 +12,8 @@
 # Massive databases
 /speed cameras/speed_cameras_all_formatted.json
 /speed cameras/speed_cameras_all_raw.json
+/speed cameras/nz_speed_cameras_geojson.json
+/speed zones/grid/
+/speed zones/output.geojson
 /speed zones/raw_nslr.json
 /speed zones/compressed_nslr.json

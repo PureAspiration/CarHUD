@@ -1,7 +1,7 @@
 import json
 
-formatted_filename = "nz_speed_cameras.json"
-geojson_filename = "../nz_speed_cameras_geojson.json"
+formatted_filename = "speed_cameras_all_formatted.json"
+geojson_filename = "nz_speed_cameras_geojson.json"
 
 with open(formatted_filename, encoding="utf-8") as f:
     data = json.load(f)

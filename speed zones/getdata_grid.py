@@ -12,9 +12,11 @@ This file gets data from the grid folder.
 import json
 import math
 import os
+import random
 import psutil
 import time
 import traceback
+from datetime import datetime, timezone
 
 from shapely.errors import GEOSException
 from shapely.geometry import Point, shape
@@ -50,7 +52,8 @@ def get_data_from_coordinates(longitude, latitude):
 
     if cell is None:
         print("Out of data range.")
-        raise ValueError("Out of data range.")
+        # raise ValueError("Out of data range.")
+        return
 
     try:
         a = time.time()
@@ -61,7 +64,8 @@ def get_data_from_coordinates(longitude, latitude):
         print(f"Done loading GEOJSON ({time.time() - a}s).")
     except FileNotFoundError:
         print("Out of grid range.")
-        raise ValueError("Out of grid range.")
+        # raise ValueError("Out of grid range.")
+        return
 
     a = time.time()
     minimum_distance = float("inf")
@@ -117,10 +121,31 @@ if __name__ == "__main__":
         start = time.time()
         try:
             cmd = input("Coordinates mode (lat, long): ")
+            if cmd.strip() == "":
+                continue
+
             if cmd.strip() in ["exec", "execute", "e"]:
                 cmd = input("Execute command > ")
                 start = time.time()
                 exec(cmd)
+            if cmd.strip() == "test":
+                while True:
+                    try:
+                        lat_min = -52.6
+                        lat_max = -29.2
+                        lon_min = 166.5
+                        lon_max = 179.1
+                        precision = 7
+                        lat = round(random.uniform(lat_min, lat_max), precision)
+                        lon = round(random.uniform(lon_min, lon_max), precision)
+                        current_date = datetime(random.randint(2015, 2024), random.randint(1, 12), random.randint(1, 28), random.randint(0, 23), random.randint(0, 59)).replace(tzinfo=timezone.utc)
+                        print("============================")
+                        print(f"testing {lat}, {lon}")
+                        get_data_from_coordinates(lon, lat)
+                        time.sleep(0.1)
+                    except KeyboardInterrupt:
+                        break
+                print("ENDED TEST")
             else:
                 start = time.time()
                 latitude, longitude = map(float, cmd.strip().split(", "))
@@ -131,5 +156,6 @@ if __name__ == "__main__":
             print(f"Error occurred when trying to execute command: {exception}")
             traceback.print_exc()
 
+        print("============================")
         get_memory()
         print(f"Command executed in ({time.time() - start}s).")

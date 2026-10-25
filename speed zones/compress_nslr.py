@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime, timezone
 
 import shapely
 from shapely.geometry import shape, MultiPolygon, mapping
@@ -7,7 +8,7 @@ from shapely.geometry import shape, MultiPolygon, mapping
 # https://speedlimits.nzta.govt.nz/
 # https://opendata-nzta.opendata.arcgis.com/datasets/NZTA::national-speed-limit-register-nslr/about
 
-geojson_filepath = "SpeedLimitZoneFull__View_-7813633772616417899.geojson"
+geojson_filepath = "output.geojson"
 compressed_geojson_filepath = "compressed_nslr.json"
 
 tolerance = 0.00005
@@ -40,6 +41,19 @@ nslr_keys = {
     "actualArea": "actualArea"
 }
 
+remove_reason = {
+    "nodata": 0,
+    "matchkeys": 0,
+    "outdated": 0
+}
+
+
+def iso_string_to_timestamp(date_string):
+    dt = datetime.strptime(date_string, "%Y-%m-%dT%H:%M:%SZ")
+    dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
 # Open and load data
 start = time.time()
 print("Loading GEOJSON...")
@@ -63,13 +77,23 @@ for i, record in enumerate(geojson_raw['features']):
     # Gets records with no geometry data ready for deletion
     if record['geometry'] is None:
         remove_records.append(record)
+        remove_reason['nodata'] += 1
         continue
 
     # Removes records with matched values for specific keys
     for key, exclude_values in exclude_value_for_keys.items():
         if record['properties'][key] in exclude_values:
             remove_records.append(record)
+            remove_reason['matchkeys'] += 1
             continue
+
+    # Remove records that are outdated
+    end_date = record['properties'].get('speedLimitZoneEndDate')
+    ineffective_date = record['properties'].get('whenIneffective')
+    if (end_date and iso_string_to_timestamp(end_date) < time.time() - 31536000) or (ineffective_date and iso_string_to_timestamp(ineffective_date) < time.time() - 31536000):
+        remove_records.append(record)
+        remove_reason['outdated'] += 1
+        continue
 
     # Simplify polygon geometries
     if tolerance is not None:
@@ -100,10 +124,11 @@ time_taken = time.time() - start
 print(f"Done compression. ({time_taken}s).")
 print(f"Average compression time per record: {time_taken / (_total_records - len(remove_records))}s")
 for k, v in _timings.items():
-    print(f"Average time to complete \"{k}\" per record: {sum(v)/len(v)}s")
+    print(f"Average time to complete \"{k}\" per record: {sum(v) / len(v)}s")
 
-# Delete records with no geometry data
+# Delete records with no geometry data or outdated
 start = time.time()
+print(remove_reason)
 print(f"Removing {len(remove_records)} unused records...")
 for remove_item in remove_records:
     geojson_raw['features'].remove(remove_item)
