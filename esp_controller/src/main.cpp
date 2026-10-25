@@ -73,6 +73,7 @@ int buzzerStepCount = 0;
 int buzzerCurrentStep = 0;
 unsigned long buzzerStepStart = 0;
 
+double last_data_timestamp = 0;
 String current_date = "";
 String current_time = "";
 String displayed_time = current_time;
@@ -108,6 +109,7 @@ String displayed_speed_source = speed_source;
 float indicated_speed = -1;
 float new_displayed_speed = indicated_speed;
 float displayed_speed = indicated_speed;
+double speed_last_response_time = 0;
 
 int speed_prediction = -999;
 float new_displayed_speed_prediction = speed_prediction;
@@ -116,10 +118,14 @@ float displayed_speed_prediction = speed_prediction;
 int max_speed = 100;
 float new_displayed_max_speed = max_speed;
 float displayed_max_speed = max_speed;
+int prev_max_speed = max_speed;
+uint32_t max_speed_change_time = millis();
 int overspeed_red_speed = 20;  // <20 over is yellow, >20 over is red
 bool prev_overspeeding = false;
+int overspeed_warn_buffer = 3;
+int min_max_speed_warn = 60;  // Buzzer will not sound below this speed
 
-boolean wifi = "";
+boolean wifi = false;
 boolean displayed_wifi = wifi;
 
 uint8_t num_sats = 0;
@@ -130,15 +136,18 @@ float new_displayed_rpm = round(indicated_rpm * 10.0) / 10.0;
 float displayed_rpm = round(indicated_rpm * 10.0) / 10.0;
 float red_line_rpm = 4000.0;
 float max_rpm = 4800.0;
+double rpm_last_response_time = 0;
 
 float fuel_flow = -1;
 float displayed_ff = round(fuel_flow * 10.0) / 10.0;
+double fuel_flow_last_response_time = 0;
 
 float fuel_efficiency = -1;
 float displayed_fe = round(fuel_efficiency * 10.0) / 10.0;
 
 float ev_charge = -1;
 int displayed_evchrg = int(round(ev_charge));
+double charge_last_response_time = 0;
 
 std::vector<std::pair<String, uint16_t>> memos;
 std::vector<std::pair<String, uint16_t>> displayed_memos;
@@ -300,7 +309,7 @@ class SpeedBar {
         // Add new speed trend
         float prediction_delta = new_displayed_speed_prediction - new_displayed_speed;  // Positive if arrow pointing up, Negative if arrow pointing down
         if (speed_prediction != -999 && abs(prediction_delta) >= 1 && 
-        !(new_displayed_speed <= 3 && prediction_delta <= 0)) {  // Speed trend is not shown if speed is less than 3 and is a negative delta
+        !(new_displayed_speed <= 3 && prediction_delta <= 0 && speed_source == "C")) {  // Speed trend is not shown if speed is less than 3 and is a negative delta and using car speed. Done due to speed not dropping to 0 when using obd
             makeSpeedTrend(spd_trend_y, TFT_YELLOW);
         }
     }
@@ -441,7 +450,11 @@ class StatusDisplay {
             }
 
             if (car_connected) {
-                status_disp.setTextColor(TFT_GREEN, TFT_BLACK);
+                if (speed_last_response_time < last_data_timestamp - 1.5) {
+                    status_disp.setTextColor(TFT_AMBER, TFT_BLACK);
+                } else {
+                    status_disp.setTextColor(TFT_GREEN, TFT_BLACK);
+                }
                 status_disp.drawString("CAR CON", col2_width + (line_w / 2) + (col1_width / 2), 25);
             }
 
@@ -1100,22 +1113,27 @@ void saveData(String key, String value) {
     if (value == "None") value = "";
     // Serial.println(key + " " + value);
     if (key == "ASPD") {if (isValidNumber(value)) {indicated_speed = value.toFloat();} else {indicated_speed = -1;}}
+    if (key == "ASPDUPDTIME") {if (isValidNumber(value)) {speed_last_response_time = value.toDouble();} else {speed_last_response_time = 0;}}
     if (key == "SPDSRC") {speed_source = value;}
     if (key == "SPDPRD") {if (isValidNumber(value)) {speed_prediction = value.toInt();} else {speed_prediction = -999;}}
     // if (key == "WSPD") {if (speed_source == "W") {if (isValidNumber(value)) {indicated_speed = value.toInt();} else {indicated_speed = -1;}}}
     // if (key == "GSPD") {if (speed_source == "G") {if (isValidNumber(value)) {indicated_speed = value.toInt();} else {indicated_speed = -1;}}}
     // if (key == "CSPD") {if (speed_source == "C") {if (isValidNumber(value)) {indicated_speed = value.toInt();} else {indicated_speed = -1;}}}
     if (key == "RPM") {if (isValidNumber(value)) {indicated_rpm = value.toInt();} else {indicated_rpm = -1;}}
+    if (key == "RPMRESPTIME") {if (isValidNumber(value)) {rpm_last_response_time = value.toDouble();} else {rpm_last_response_time = 0;}}
     if (key == "FUELFLOW") {if (isValidNumber(value)) {fuel_flow = value.toFloat();} else {fuel_flow = -1;}}
+    if (key == "FUELFLOWRESPTIME") {if (isValidNumber(value)) {fuel_flow_last_response_time = value.toDouble();} else {fuel_flow_last_response_time = 0;}}
     if (key == "BATREM") {if (isValidNumber(value)) {ev_charge = value.toInt();} else {ev_charge = -1;}}
+    if (key == "BATREMRESPTIME") {if (isValidNumber(value)) {charge_last_response_time = value.toDouble();} else {charge_last_response_time = 0;}}
     if (key == "CARCON") {if (isValidNumber(value)) {if (value.toInt() == 1) {car_connected = true;} else {car_connected = false;}}}
     if (key == "MODCON") {if (isValidNumber(value)) {if (value.toInt() == 1) {gps_module_connected = true;} else {gps_module_connected = false;}}}
     if (key == "SGNL") {if (isValidNumber(value)) {if (value.toInt() == 1) {gps_signal = true;} else {gps_signal = false;}}}
     if (key == "NUMSATS") {if (isValidNumber(value)) {num_sats = value.toInt();}}
     if (key == "WIFI") {if (isValidNumber(value)) {if (value.toInt() == 1) {wifi = true;} else {wifi = false;}}}
+    if (key == "TIMESTMP") {if (isValidNumber(value)) {last_data_timestamp = value.toDouble();} else {last_data_timestamp = 0;}}
     if (key == "TIME") {current_time = value;}
     if (key == "DATE") {current_date = value;}
-    if (key == "LIM") {if (isValidNumber(value)) {max_speed = value.toInt(); if (max_speed == -1) max_speed = 100;}}
+    if (key == "LIM") {if (isValidNumber(value)) {if (max_speed != value.toInt() && value.toInt() != -1) {prev_max_speed = max_speed; max_speed_change_time = millis();} max_speed = value.toInt(); if (max_speed == -1) max_speed = 100;}}
     if (key == "VARY") {vary = value;}
     if (key == "CATEGORY") {category = value;}
     if (key == "ZONEREASON") {zoneReason = value;}
@@ -1175,7 +1193,7 @@ void setup() {
     sprintf(info, "FLASH: %d/%d (%d%%)", usedStat, maxStat, usedPercentage);
     tft.drawString(info, 480, 0);
 
-    Serial1.begin(9600, SERIAL_8N1, RXD1, TXD1);
+    Serial1.begin(115200, SERIAL_8N1, RXD1, TXD1);
     delay(2500);
 
     while (millis() < 40000) {
@@ -1258,9 +1276,16 @@ void loop() {
             memos.push_back({"PARK BRK", TFT_GREEN});
             memos.push_back({"SEAT BELT NOT ENG", TFT_RED});
         }
+
+
+        // Ensure data is valid
+        if (speed_last_response_time < last_data_timestamp - 1.5) {indicated_speed = -1;}
+        if (rpm_last_response_time < last_data_timestamp - 3) {indicated_rpm = -1;}
+        if (fuel_flow_last_response_time < last_data_timestamp - 3) {fuel_flow = -1;}
+        if (charge_last_response_time < last_data_timestamp - 10) {ev_charge = -1;}
         
 
-        if (!test_mode && millis() - lastDataTime > 5000) {
+        if (!test_mode && millis() - lastDataTime > 3000) {
             warnings.push_back({"DATA", "CONN FAIL", TFT_RED, {{"- DEV POWER", "CHECK", TFT_CYAN, 1}, {"- SERVICE", "START", TFT_CYAN, 1}}});
         } else if (!test_mode && gps_module_connected == false) {
             warnings.push_back({"GPS", "CONN FAIL", TFT_RED, {{"- GPS CONN", "CHECK", TFT_CYAN, 1}}});
@@ -1280,15 +1305,26 @@ void loop() {
             memos.push_back({"ALTN LAW: PROT LOST", TFT_GREEN});
         }
 
+        if (!car_connected) {
+            warnings.push_back({"OBD", "NO CONNECTION", TFT_AMBER, {}});
+        }
+
         speedcamAlertMode = false;
         if (indicated_speed == -1) {
             memos.push_back({"SPEED UNAVAIL", TFT_RED});
         } else if (indicated_speed > max_speed + overspeed_red_speed) {
             warnings.push_back({"OVERSPEED", "", TFT_RED, {{"- MAX SPD", String(max_speed) + "KM/H", TFT_CYAN, 1}}});
             speedcamAlertMode = true;
-            if (prev_overspeeding == false) {
-                prev_overspeeding = true;
-                startBuzzerPattern(overspeedBzPattern, sizeof(overspeedBzPattern) / sizeof(BuzzerStep));
+            if (prev_overspeeding == false && indicated_speed > min_max_speed_warn) {
+                if (prev_max_speed > max_speed) {
+                    if (millis() >= max_speed_change_time + overspeed_warn_buffer * 1000) {
+                        prev_overspeeding = true;
+                        startBuzzerPattern(overspeedBzPattern, sizeof(overspeedBzPattern) / sizeof(BuzzerStep));
+                    }
+                } else {
+                    prev_overspeeding = true;
+                    startBuzzerPattern(overspeedBzPattern, sizeof(overspeedBzPattern) / sizeof(BuzzerStep));
+                }
             }
         } else if (indicated_speed > max_speed) {
             warnings.push_back({"OVERSPEED", "", TFT_AMBER, {{"- MAX SPD", String(max_speed) + "KM/H", TFT_CYAN, 1}}});

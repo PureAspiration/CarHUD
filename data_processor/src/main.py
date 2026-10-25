@@ -10,16 +10,17 @@ import traceback
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone, date as dt_date, time as dt_time
+from typing import TYPE_CHECKING
 from typing import Union, Dict, Any
 
+if TYPE_CHECKING:
+    import obd
+
 import numpy as np
-import obd
 import psutil
 import pynmea2
 import pytz
 import serial
-from obd import OBDCommand, Unit
-from obd.utils import bytes_to_int
 from shapely import LineString
 from shapely.geometry import Point
 
@@ -91,9 +92,13 @@ initial_obd_data: Dict[str, Any] = {  # This is used to create a multiprocessing
     "car_connected": False,
     "failed_attempts": 0,
     "rpm": None,
+    "rpm_last_resp_time": None,
     "speed": None,
+    "speed_last_resp_time": None,
     "fuel_flow": None,
-    "battery_remaining": None
+    "fuel_flow_last_resp_time": None,
+    "bat_rem": None,
+    "bat_rem_last_resp_time": None
 }
 obd_stop_event = multiprocessing.Event()
 
@@ -607,7 +612,10 @@ def gps_reader():
 # #####        OBD Data Receiver        #####
 # ###########################################
 
-def obd_retrieve_loop(obd_serial: obd.OBD, obd_data, gps_data):
+def obd_retrieve_loop(obd_serial: "obd.OBD", obd_data, gps_data):
+    import obd
+    from obd import OBDCommand, Unit
+    from obd.utils import bytes_to_int
     logging.info("OBD Retrieve Loop started")
 
     rpm_query_freq = 0
@@ -702,19 +710,22 @@ def obd_retrieve_loop(obd_serial: obd.OBD, obd_data, gps_data):
                 response = get_rpm()
                 if response is not None:
                     obd_data['rpm'] = response
+                    obd_data['rpm_last_resp_time'] = time.time()
 
             if time.time() > last_fuel_flow_query + fuel_flow_query_freq:
                 last_fuel_flow_query = time.time()
                 response = get_fuel_flow()
                 if response is not None:
                     obd_data['fuel_flow'] = response
+                    obd_data['fuel_flow_last_resp_time'] = time.time()
 
             if time.time() > last_speed_query + speed_query_freq:
                 last_speed_query = time.time()
                 response = get_speed()
                 if response is not None:
                     obd_data['speed'] = response
-                    if int(gps_data['num_sats']) <= 6:
+                    obd_data['speed_last_resp_time'] = time.time()
+                    if int(gps_data['num_sats']) <= 7:
                         if speed_source.value != "C":
                             logging.info(f"Speed source has been changed to car as GPS is unreliable ({int(gps_data['num_sats'])} sats).")
                         speed_source.value = "C"  # Speed source to come from car as GPS is unreliable
@@ -728,7 +739,8 @@ def obd_retrieve_loop(obd_serial: obd.OBD, obd_data, gps_data):
                 last_hybrid_soc_query = time.time()
                 response = get_hybrid_soc()
                 if response is not None:
-                    obd_data['battery_remaining'] = round(response, 2)
+                    obd_data['bat_rem'] = round(response, 2)
+                    obd_data['bat_rem_last_resp_time'] = time.time()
 
         except Exception as exception:
             logging.error(f"{exception} occurred in OBD read loop:")
@@ -750,13 +762,16 @@ def obd_retrieve_loop(obd_serial: obd.OBD, obd_data, gps_data):
     obd_data['rpm'] = None
     obd_data['speed'] = None
     obd_data['fuel_flow'] = None
-    obd_data['battery_remaining'] = None
+    obd_data['bat_rem'] = None
 
     time.sleep(3)
 
 
 def obd_data_retriever(obd_data, gps_data):
-    time.sleep(3)
+    # Import here to allow main loop to run faster
+    import obd
+
+    time.sleep(1)
     logging.debug("Setting up OBD Serial")
     while not obd_stop_event.is_set():
         # Check if bluetooth port is configured
@@ -863,21 +878,26 @@ def esp32_data_sender():
                     speed_cam_str += f"distance={speed_cams_info['relevant_speed_cam']['distance']}"
                 speed_cam_str += "}"
 
-                esp32_serial.write(f"<"
+                encoded_message = (f"<"
                                    f"ASPD:{speed_history[-1][0] * playback_multiplier if speed_history else -1},"
+                                   f"ASPDUPDTIME:{speed_history[-1][1] if speed_history else 0},"
                                    f"SPDSRC:{speed_source.value},"
                                    f"SPDPRD:{speed_prediction * playback_multiplier if speed_prediction is not None else -1},"
                                    # f"WSPD:{gps_data['weighted_speed'] if gps_data['weighted_speed'] is not None else -1},"
                                    # f"GSPD:{gps_data['speed'] if gps_data['speed'] is not None else -1},"
                                    # f"CSPD:{obd_data['speed'] if obd_data['speed'] is not None else -1},"
                                    f"RPM:{obd_data['rpm'] if obd_data['rpm'] is not None else -1},"
+                                   f"RPMRESPTIME:{obd_data['rpm_last_resp_time'] if obd_data['rpm_last_resp_time'] is not None else 0},"
                                    f"FUELFLOW:{obd_data['fuel_flow'] if obd_data['fuel_flow'] is not None else -1},"
-                                   f"BATREM:{obd_data['battery_remaining'] if obd_data['battery_remaining'] is not None else -1},"
+                                   f"FUELFLOWRESPTIME:{obd_data['fuel_flow_last_resp_time'] if obd_data['fuel_flow_last_resp_time'] is not None else 0},"
+                                   f"BATREM:{obd_data['bat_rem'] if obd_data['bat_rem'] is not None else -1},"
+                                   f"BATREMRESPTIME:{obd_data['bat_rem_last_resp_time'] if obd_data['bat_rem_last_resp_time'] is not None else 0},"
                                    f"CARCON:{int(obd_data['car_connected'])},"
                                    f"MODCON:{int(gps_data['module_connected'])},"
                                    f"SGNL:{int(gps_data['gps_signal'])},"
                                    f"NUMSATS:{int(gps_data['num_sats'])},"
                                    f"WIFI:{int(gps_data['wifi'])},"
+                                   f"TIMESTMP:{time.time()},"
                                    f"TIME:{gps_data['time'] or ''},"
                                    f"DATE:{gps_data['date'] or ''},"
                                    f"LIM:{zone_info['limit'] if zone_info['limit'] is not None else -1}>,"
@@ -889,6 +909,9 @@ def esp32_data_sender():
                                    f"ZONEAREA:{remove_invalid_characters(zone_info['zoneArea'])},"
                                    f"SPEEDCAM:{remove_invalid_characters(speed_cam_str)}"
                                    f">".encode("utf-8"))
+
+                esp32_serial.write(encoded_message)
+
                 time.sleep(0.1)
 
         except serial.SerialException:
@@ -948,9 +971,7 @@ if __name__ == "__main__":
     wifi_thread.start()
     logging.info("Wifi Check task running")
 
-    logging.info("Starting data fetcher in 5 seconds...")
-    time.sleep(5)
-    logging.info("Background data fetcher (main thread) started")
+    logging.info("Starting background data fetcher (main thread)")
 
     # ###########################################
     # #####             MAIN LOOP           #####
