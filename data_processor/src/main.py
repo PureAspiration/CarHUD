@@ -37,7 +37,7 @@ gps_timeout = 5
 
 # ESP32 Serial connection
 esp32_port = "/dev/ttyS5"
-esp32_baud_rate = 9600
+esp32_baud_rate = 115200
 esp32_timeout = 1
 
 # OBD Serial connection
