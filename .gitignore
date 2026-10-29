@@ -1,6 +1,8 @@
 /.idea/
 /__pycache__/
 /venv/
+
+/docs/assets/
 /data_processor/src/tests/
 
 /data_processor/instructions.txt
